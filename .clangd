@@ -1,6 +1,9 @@
 # Require clangd v15
 CompileFlags:
   Add:
+    - -xc
+    - -Wall
+    - -Wextra
     - -Weverything
     - -Wno-sign-conversion
     - -Wno-shorten-64-to-32
