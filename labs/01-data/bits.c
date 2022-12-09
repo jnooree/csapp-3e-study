@@ -142,7 +142,10 @@ NOTES:
  *   Rating: 1
  */
 int bitXor(int x, int y) {
-  return 2;
+  int notin, notout;
+  notin = ~(x & y);
+  notout = ~((~x) & (~y));
+  return notin & notout;
 }
 
 /*
@@ -152,7 +155,7 @@ int bitXor(int x, int y) {
  *   Rating: 1
  */
 int tmin(void) {
-  return 2;
+  return 1 << 31;
 }
 
 // 2
@@ -164,7 +167,9 @@ int tmin(void) {
  *   Rating: 1
  */
 int isTmax(int x) {
-  return 2;
+  int y;
+  y = x + 1; // UB, but let's just use it...
+  return !!(~x) & !~(x ^ y);
 }
 
 /*
@@ -176,7 +181,11 @@ int isTmax(int x) {
  *   Rating: 2
  */
 int allOddBits(int x) {
-  return 2;
+  int allevens;
+  allevens = 0x55;
+  allevens = allevens + (allevens << 8);
+  allevens = allevens + (allevens << 16);
+  return !~(allevens | x);
 }
 
 /*
@@ -187,7 +196,7 @@ int allOddBits(int x) {
  *   Rating: 2
  */
 int negate(int x) {
-  return 2;
+  return ~x + 1;
 }
 
 // 3
@@ -200,7 +209,13 @@ int negate(int x) {
  *   Rating: 3
  */
 int isAsciiDigit(int x) {
-  return 2;
+  int negx = ~x + 1;
+  int isunder = 0x39 + negx;
+  int isupper = x + (~0x30 + 1);
+
+  int isunder_topbit = isunder >> 31;
+  int isupper_topbit = isupper >> 31;
+  return !(isunder_topbit | isupper_topbit);
 }
 
 /*
@@ -211,7 +226,13 @@ int isAsciiDigit(int x) {
  *   Rating: 3
  */
 int conditional(int x, int y, int z) {
-  return 2;
+  int notx = !x;
+  int filter = (notx << 1) + notx;
+  filter = (filter << 2) + filter;
+  filter = (filter << 4) + filter;
+  filter = (filter << 8) + filter;
+  filter = (filter << 16) + filter;
+  return (filter & z) + (~filter & y);
 }
 
 /*
@@ -222,7 +243,17 @@ int conditional(int x, int y, int z) {
  *   Rating: 3
  */
 int isLessOrEqual(int x, int y) {
-  return 2;
+  int xpos = !(x >> 31);
+  int ypos = !(y >> 31);
+
+  int negx = ~x + 1;
+  int ymx = y + negx;
+  int sgn = ymx >> 31;
+
+  int x_intmin = !!x & !(negx ^ x);
+  int x_onlyneg = (!xpos) & ypos;
+  int same_sgn = !(xpos ^ ypos) & !sgn;
+  return x_intmin | x_onlyneg | same_sgn;
 }
 
 // 4
@@ -235,7 +266,12 @@ int isLessOrEqual(int x, int y) {
  *   Rating: 4
  */
 int logicalNeg(int x) {
-  return 2;
+  int xsgn = x >> 31;
+  int posx = (~xsgn & x) + (xsgn & (1 << 31));
+  int allone = ~0;
+  int sum = allone + posx;
+  int sgn = sum >> 31;
+  return sgn & 1;
 }
 
 /* howManyBits - return the minimum number of bits required to represent x in
@@ -267,7 +303,33 @@ int howManyBits(int x) {
  *   Rating: 4
  */
 unsigned floatScale2(unsigned uf) {
-  return 2;
+  unsigned sign_bit = 0x80000000;
+  unsigned exp_bits = 0x7f800000;
+  unsigned exp_one = 0x00800000;
+
+  unsigned sign = sign_bit & uf;
+  unsigned exponent = exp_bits & uf;
+  unsigned fraction = uf - exponent - sign;
+
+  // Check for NaNs and infs
+  if (exponent == exp_bits)
+    return uf;
+
+  if (exponent) {
+    exponent += exp_one;
+  } else {
+    fraction <<= 1;
+    if (exp_bits & fraction) {
+      exponent += exp_one;
+      // Overflow
+      if (!exponent)
+        return sign + exp_bits;
+
+      fraction -= exp_one;
+    }
+  }
+
+  return sign + exponent + fraction;
 }
 
 /*
@@ -283,7 +345,32 @@ unsigned floatScale2(unsigned uf) {
  *   Rating: 4
  */
 int floatFloat2Int(unsigned uf) {
-  return 2;
+  unsigned sign_bit = 0x80000000;
+  unsigned exp_bits = 0x7f800000;
+  unsigned exp_one = 0x00800000;
+
+  unsigned imax_p1 = 0x4f000000;
+  unsigned imin = 0xcf000000;
+  unsigned ione = 0x3f800000;
+
+  unsigned sign = sign_bit & uf;
+  unsigned exponent = exp_bits & uf;
+  unsigned fraction = uf - exponent - sign;
+
+  unsigned puf = uf - sign;
+
+  if (uf > imin || puf >= imax_p1)
+    return 0x80000000U;
+
+  if (puf < ione)
+    return 0;
+
+  exponent >>= 23;
+  exponent -= 127;
+  fraction += exp_one;
+
+  fraction >>= (23 - exponent);
+  return sign ? -fraction : fraction;
 }
 
 /*
@@ -300,5 +387,19 @@ int floatFloat2Int(unsigned uf) {
  *   Rating: 4
  */
 unsigned floatPower2(int x) {
-  return 2;
+  unsigned inf = 0x7f800000;
+
+  int exponent;
+
+  if (x > 127)
+    return inf;
+
+  if (x < -149)
+    return 0;
+
+  exponent = x + 127;
+  if (exponent < 0)
+    return 1 << (22 + exponent);
+
+  return exponent << 23;
 }
