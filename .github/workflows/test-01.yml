@@ -1,0 +1,30 @@
+name: Test 01-data lab
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/test-01.yml"
+      - "labs/01-data/**"
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install required packages
+        run: sudo apt install -y gcc-multilib
+        env:
+          DEBIAN_FRONTEND: noninteractive
+
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Compile and run tests
+        run: |
+          cd labs/01-data
+          ./driver.pl | tee /dev/stderr | tail -n 1 | grep -qF '62/62'
