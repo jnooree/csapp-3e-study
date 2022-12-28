@@ -287,7 +287,40 @@ int logicalNeg(int x) {
  *  Rating: 4
  */
 int howManyBits(int x) {
-  return 0;
+  // Invert the bits if x < 0, for easier manipulation
+  int filter = x >> 31;
+  int posx = (~x & filter) + (x & ~filter);
+
+  // Build masks (see https://en.wikipedia.org/wiki/Hamming_weight)
+  int m01 = 0x55;
+  int m02 = 0x33;
+  int m04 = 0x0f;
+  int m08 = (0xff << 16) + 0xff;
+  int m16 = (0xff << 8) + 0xff;
+
+  m01 += m01 << 8;
+  m01 += m01 << 16;
+
+  m02 += m02 << 8;
+  m02 += m02 << 16;
+
+  m04 += m04 << 8;
+  m04 += m04 << 16;
+
+  // Make everything 1 after msb
+  posx |= posx >> 1;
+  posx |= posx >> 2;
+  posx |= posx >> 4;
+  posx |= posx >> 8;
+  posx |= posx >> 16;
+
+  // Sum the bits; +1 for sign bit
+  posx = (posx & m01) + ((posx >> 1) & m01);
+  posx = (posx & m02) + ((posx >> 2) & m02);
+  posx = (posx & m04) + ((posx >> 4) & m04);
+  posx = (posx & m08) + ((posx >> 8) & m08);
+  posx = (posx & m16) + ((posx >> 16) & m16);
+  return posx + 1;
 }
 
 // float
