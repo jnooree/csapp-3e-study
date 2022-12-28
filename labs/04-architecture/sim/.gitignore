@@ -1,0 +1,14 @@
+*.y[o,s]
+
+misc/hcl.tab.*
+misc/hcl2c
+misc/lex.yy.*
+misc/yas
+misc/yas-grammar.*
+misc/yis
+
+pipe/pipe-std.*
+pipe/psim
+
+seq/seq-std.*
+seq/ssim
