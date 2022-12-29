@@ -1,4 +1,4 @@
-*.y[o,s]
+*.yo
 
 misc/hcl.tab.*
 misc/hcl2c
