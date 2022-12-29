@@ -6,5 +6,5 @@ stack:
 
 main:
   movl $0x59b997fa, %edi
-  push $0x4017ec
+  pushq $0x4017ec
   ret

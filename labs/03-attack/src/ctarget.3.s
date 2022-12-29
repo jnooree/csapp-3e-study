@@ -6,7 +6,7 @@ stack:
 
 main:
   movl $(BASE + cookie - stack), %edi
-  push $0x4018fa
+  pushq $0x4018fa
   ret
 
 cookie:
