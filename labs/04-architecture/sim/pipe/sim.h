@@ -1,6 +1,10 @@
 #ifndef CSAPP_ARCH_PIPE_SIM_H_
 #define CSAPP_ARCH_PIPE_SIM_H_
 
+#include "isa.h"
+#include "pipeline.h"
+#include "stages.h"
+
 /********** Typedefs ************/
 
 /* EX stage mux settings */

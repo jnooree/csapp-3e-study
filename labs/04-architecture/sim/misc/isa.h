@@ -13,6 +13,8 @@
 #ifndef CSAPP_ARCH_MISC_ISA_H_
 #define CSAPP_ARCH_MISC_ISA_H_
 
+#include <stdio.h>
+
 /**************** Registers *************************/
 
 /* REG_NONE is a special one to indicate no register */
