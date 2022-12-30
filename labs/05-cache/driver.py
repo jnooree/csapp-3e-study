@@ -1,4 +1,4 @@
-#!/usr//bin/python
+#!/usr/bin/env python3
 #
 # driver.py - The driver tests the correctness of the student's cache
 #     simulator and the correctness and performance of their transpose
@@ -51,7 +51,7 @@ def main():
     print("Part A: Testing cache simulator")
     print("Running ./test-csim")
     p = subprocess.Popen("./test-csim",
-                         shell=True, stdout=subprocess.PIPE)
+                         shell=True, stdout=subprocess.PIPE, text=True)
     stdout_data = p.communicate()[0]
 
     # Emit the output from test-csim
@@ -67,21 +67,21 @@ def main():
     print("Part B: Testing transpose function")
     print("Running ./test-trans -M 32 -N 32")
     p = subprocess.Popen("./test-trans -M 32 -N 32 | grep TEST_TRANS_RESULTS",
-                         shell=True, stdout=subprocess.PIPE)
+                         shell=True, stdout=subprocess.PIPE, text=True)
     stdout_data = p.communicate()[0]
     result32 = re.findall(r'(\d+)', stdout_data)
 
     # 64x64 transpose
     print("Running ./test-trans -M 64 -N 64")
     p = subprocess.Popen("./test-trans -M 64 -N 64 | grep TEST_TRANS_RESULTS",
-                         shell=True, stdout=subprocess.PIPE)
+                         shell=True, stdout=subprocess.PIPE, text=True)
     stdout_data = p.communicate()[0]
     result64 = re.findall(r'(\d+)', stdout_data)
 
     # 61x67 transpose
     print("Running ./test-trans -M 61 -N 67")
     p = subprocess.Popen("./test-trans -M 61 -N 67 | grep TEST_TRANS_RESULTS",
-                         shell=True, stdout=subprocess.PIPE)
+                         shell=True, stdout=subprocess.PIPE, text=True)
     stdout_data = p.communicate()[0]
     result61 = re.findall(r'(\d+)', stdout_data)
 
