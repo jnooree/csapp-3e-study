@@ -11,18 +11,22 @@ GUIMODE=-DHAS_GUI
 # to tell gcc which directory to look in. Comment this out if you
 # don't have Tcl/Tk.
 
-TKLIBS=-L/usr/lib -ltk -ltcl
+TKLIBS=-L/home/linuxbrew/.linuxbrew/opt/tcl-tk/lib \
+	-Wl,-rpath,/home/linuxbrew/.linuxbrew/opt/tcl-tk/lib \
+	-ltcl8.6 -ltk8.6
 
 # Modify the following line so that gcc can find the tcl.h and tk.h
 # header files on your system. Comment this out if you don't have
 # Tcl/Tk.
 
-TKINC=-isystem /usr/include/tcl8.5
+TKINC=-isystem /home/linuxbrew/.linuxbrew/opt/tcl-tk/include \
+	-isystem /home/linuxbrew/.linuxbrew/opt/libx11/include \
+	-isystem /home/linuxbrew/.linuxbrew/opt/xorgproto/include
 
 # Modify these two lines to choose your compiler and compile time
 # flags.
 
-CC=gcc
+CC=gcc-12
 CFLAGS=-Wall -O2
 
 ##################################################
@@ -45,7 +49,7 @@ ssim: seq-$(VERSION).hcl ssim.c  sim.h $(MISCDIR)/isa.c $(MISCDIR)/isa.h
 		seq-$(VERSION).c ssim.c $(MISCDIR)/isa.c $(LIBS)
 
 # This rule builds the SEQ+ simulator (ssim+)
-ssim+: seq+-std.hcl ssim.c sim.h $(MISCDIR)/isa.c $(MISCDIR)/isa.h 
+ssim+: seq+-std.hcl ssim.c sim.h $(MISCDIR)/isa.c $(MISCDIR)/isa.h
 	# Building the seq+-std.hcl version of SEQ+
 	$(HCL2C) -n seq+-std.hcl <seq+-std.hcl >seq+-std.c
 	$(CC) $(CFLAGS) $(INC) -o ssim+ \
@@ -59,7 +63,3 @@ ssim+: seq+-std.hcl ssim.c sim.h $(MISCDIR)/isa.c $(MISCDIR)/isa.h
 
 clean:
 	rm -f ssim ssim+ seq*-*.c *.o *~ *.exe *.yo *.ys
-
-
-
-
