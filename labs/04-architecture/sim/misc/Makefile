@@ -6,7 +6,10 @@ YACC=bison
 LEXLIB = -lfl
 YAS=./yas
 
-all: yis yas hcl2c
+SRCS := $(wildcard *.ys)
+BINS := $(SRCS:%.ys=%.yo)
+
+all: yis yas hcl2c $(BINS)
 
 # These are implicit rules for making .yo files from .ys files.
 # E.g., make sum.yo
@@ -53,7 +56,5 @@ hcl.tab.c: hcl.y
 	$(YACC) -d hcl.y
 
 clean:
-	rm -f *.o *.yo *.exe yis yas hcl2c mux4 *~ core.* 
+	rm -f *.o *.yo *.exe yis yas hcl2c mux4 *~ core.*
 	rm -f hcl.tab.c hcl.tab.h lex.yy.c yas-grammar.c
-
-
