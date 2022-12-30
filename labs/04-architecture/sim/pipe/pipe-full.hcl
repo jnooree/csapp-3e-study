@@ -156,7 +156,7 @@ word f_ifun = [
 ];
 
 # Is instruction valid?
-bool instr_valid = f_icode in 
+bool instr_valid = f_icode in
 	{ INOP, IHALT, IRRMOVQ, IIRMOVQ, IRMMOVQ, IMRMOVQ,
 	  IOPQ, IJXX, ICALL, IRET, IPUSHQ, IPOPQ };
 
@@ -170,7 +170,7 @@ word f_stat = [
 
 # Does fetched instruction require a regid byte?
 bool need_regids =
-	f_icode in { IRRMOVQ, IOPQ, IPUSHQ, IPOPQ, 
+	f_icode in { IRRMOVQ, IOPQ, IPUSHQ, IPOPQ,
 		     IIRMOVQ, IRMMOVQ, IMRMOVQ };
 
 # Does fetched instruction require a constant word?
@@ -247,7 +247,7 @@ word aluA = [
 
 ## Select input B to ALU
 word aluB = [
-	E_icode in { IRMMOVQ, IMRMOVQ, IOPQ, ICALL, 
+	E_icode in { IRMMOVQ, IMRMOVQ, IOPQ, ICALL,
 		     IPUSHQ, IRET, IPOPQ } : E_valB;
 	E_icode in { IRRMOVQ, IIRMOVQ } : 0;
 	# Other instructions don't need ALU
@@ -328,7 +328,7 @@ bool F_stall =
 
 # Should I stall or inject a bubble into Pipeline Register D?
 # At most one of these can be true.
-bool D_stall = 
+bool D_stall =
 	# Conditions for a load/use hazard
 	E_icode in { IMRMOVQ, IPOPQ } &&
 	 E_dstM in { d_srcA, d_srcB };
