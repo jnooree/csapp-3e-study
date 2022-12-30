@@ -11,18 +11,22 @@ GUIMODE=-DHAS_GUI
 # to tell gcc which directory to look in. Comment this out if you
 # don't have Tcl/Tk.
 
-TKLIBS=-L/usr/lib -ltk -ltcl
+TKLIBS=-L/home/linuxbrew/.linuxbrew/opt/tcl-tk/lib \
+	-Wl,-rpath,/home/linuxbrew/.linuxbrew/opt/tcl-tk/lib \
+	-ltcl8.6 -ltk8.6
 
 # Modify the following line so that gcc can find the tcl.h and tk.h
 # header files on your system. Comment this out if you don't have
 # Tcl/Tk.
 
-TKINC=-isystem /usr/include/tcl8.5
+TKINC=-isystem /home/linuxbrew/.linuxbrew/opt/tcl-tk/include \
+	-isystem /home/linuxbrew/.linuxbrew/opt/libx11/include \
+	-isystem /home/linuxbrew/.linuxbrew/opt/xorgproto/include
 
 # Modify these two lines to choose your compiler and compile time
 # flags.
 
-CC=gcc
+CC=gcc-12
 CFLAGS=-Wall -O2
 
 ##################################################
@@ -45,7 +49,7 @@ psim: psim.c sim.h pipe-$(VERSION).hcl $(MISCDIR)/isa.c $(MISCDIR)/isa.h
 		$(MISCDIR)/isa.c $(LIBS)
 
 # This rule builds driver programs for Part C of the Architecture Lab
-drivers: 
+drivers:
 	./gen-driver.pl -n 4 -f ncopy.ys > sdriver.ys
 	../misc/yas sdriver.ys
 	./gen-driver.pl -n 63 -f ncopy.ys > ldriver.ys
@@ -58,6 +62,4 @@ drivers:
 
 
 clean:
-	rm -f psim pipe-*.c *.o *.exe *~ 
-
-
+	rm -f psim pipe-*.c *.o *.exe *~
