@@ -7,9 +7,8 @@ misc/yas
 misc/yas-grammar.*
 misc/yis
 
-pipe/pipe-std.*
+pipe/pipe-*.c
 pipe/psim
 
-seq/seq-std.c
-seq/seq-full.c
+seq/seq-*.c
 seq/ssim
