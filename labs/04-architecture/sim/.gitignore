@@ -10,5 +10,6 @@ misc/yis
 pipe/pipe-std.*
 pipe/psim
 
-seq/seq-std.*
+seq/seq-std.c
+seq/seq-full.c
 seq/ssim

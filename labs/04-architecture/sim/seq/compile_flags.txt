@@ -1,0 +1,8 @@
+-isystem
+/home/linuxbrew/.linuxbrew/opt/tcl-tk/include
+-isystem
+/home/linuxbrew/.linuxbrew/opt/libx11/include
+-isystem
+/home/linuxbrew/.linuxbrew/opt/xorgproto/include
+-I../misc
+-DHAS_GUI
