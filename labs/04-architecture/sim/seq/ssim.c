@@ -1,10 +1,10 @@
 /***********************************************************************
  *
  * ssim.c - Sequential Y86-64 simulator
- * 
+ *
  * Copyright (c) 2002, 2015. Bryant and D. O'Hallaron, All rights reserved.
  * May not be used, modified, or copied without permission.
- ***********************************************************************/ 
+ ***********************************************************************/
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -33,23 +33,23 @@
 extern char simname[];
 
 /* SEQ=0, SEQ+=1. Modified by HCL main() */
-int plusmode = 0; 
+int plusmode = 0;
 
 /* Parameters modifed by the command line */
 int gui_mode = FALSE;    /* Run in GUI mode instead of TTY mode? (-g) */
 char *object_filename;   /* The input object file name. */
 FILE *object_file;       /* Input file handle */
-bool_t verbosity = 2;    /* Verbosity level [TTY only] (-v) */ 
+bool_t verbosity = 2;    /* Verbosity level [TTY only] (-v) */
 word_t instr_limit = 10000; /* Instruction limit [TTY only] (-l) */
 bool_t do_check = FALSE; /* Test with YIS? [TTY only] (-t) */
 
-/************* 
- * End Globals 
+/*************
+ * End Globals
  *************/
 
 
 /***************************
- * Begin function prototypes 
+ * Begin function prototypes
  ***************************/
 
 static void usage(char *name);           /* Print helpful usage message */
@@ -71,7 +71,7 @@ void addAppCommands(Tcl_Interp *interp); /* Add application-dependent commands *
  * simulation.
  *******************************************************************/
 
-/* 
+/*
  * sim_main - main simulator routine. This function is called from the
  * main() routine in the HCL file.
  */
@@ -81,7 +81,7 @@ int sim_main(int argc, char **argv)
     int c;
     char *myargv[MAXARGS];
 
-    
+
     /* Parse the command line arguments */
     while ((c = getopt(argc, argv, "htgl:v:")) != -1) {
 	switch(c) {
@@ -143,7 +143,7 @@ int sim_main(int argc, char **argv)
 	exit(1);
 #endif /* HAS_GUI */
 
-	/* In GUI mode, we must specify the object file on command line */ 
+	/* In GUI mode, we must specify the object file on command line */
 	if (!object_file) {
 	    printf("Missing object file argument in GUI mode\n");
 	    usage(argv[0]);
@@ -161,7 +161,7 @@ int sim_main(int argc, char **argv)
 #if 0
 	printf("argv[0]=%s\n", argv[0]);
 	{
-	    char buf[1000]; 
+	    char buf[1000];
 	    getcwd(buf, 1000);
 	    printf("cwd=%s\n", buf);
 	}
@@ -187,10 +187,10 @@ int sim_main(int argc, char **argv)
     exit(0);
 }
 
-/* 
+/*
  * run_tty_sim - Run the simulator in TTY mode
  */
-static void run_tty_sim() 
+static void run_tty_sim()
 {
     word_t icount = 0;
     status = STAT_AOK;
@@ -232,7 +232,7 @@ static void run_tty_sim()
 
     mem0 = copy_mem(mem);
     reg0 = copy_mem(reg);
-    
+
 
     icount = sim_run(instr_limit, &status, &result_cc);
     if (verbosity > 0) {
@@ -292,7 +292,7 @@ static void usage(char *name)
     printf("Usage: %s [-htg] [-l m] [-v n] file.yo\n", name);
     printf("file.yo required in GUI mode, optional in TTY mode (default stdin)\n");
     printf("   -h     Print this message\n");
-    printf("   -g     Run in GUI mode instead of TTY mode (default TTY)\n");  
+    printf("   -g     Run in GUI mode instead of TTY mode (default TTY)\n");
     printf("   -l m   Set instruction limit to m [TTY mode only] (default %lld)\n", instr_limit);
     printf("   -v n   Set verbosity level to 0 <= n <= 2 [TTY mode only] (default %d)\n", verbosity);
     printf("   -t     Test result against ISA simulator (yis) [TTY mode only]\n");
@@ -321,9 +321,9 @@ mem_t reg;               /* Register file */
 cc_t cc = DEFAULT_CC;    /* Condition code register */
 cc_t cc_in = DEFAULT_CC; /* Input to condition code register */
 
-/* 
+/*
  * SEQ+: Results computed by previous instruction.
- * Used to compute PC in current instruction 
+ * Used to compute PC in current instruction
  */
 byte_t prev_icode = I_NOP;
 byte_t prev_ifun = 0;
@@ -462,7 +462,7 @@ static char *format_f()
     char valpstring[17];
     wstring(valc, 4, 64, valcstring);
     wstring(valp, 4, 64, valpstring);
-    sprintf(status_msg, "%s %s %s %s %s", 
+    sprintf(status_msg, "%s %s %s %s %s",
 	    iname(HPACK(icode, ifun)),
 	    reg_name(ra),
 	    reg_name(rb),
@@ -717,14 +717,14 @@ static byte_t sim_step()
     if (status == STAT_AOK && icode == I_HALT) {
 	status = STAT_HLT;
     }
-    
+
     srcA = gen_srcA();
     if (srcA != REG_NONE) {
 	vala = get_reg_val(reg, srcA);
     } else {
 	vala = 0;
     }
-    
+
     srcB = gen_srcB();
     if (srcB != REG_NONE) {
 	valb = get_reg_val(reg, srcB);
@@ -778,7 +778,7 @@ static byte_t sim_step()
     } else {
 	/* Update PC */
 	pc_in = gen_new_pc();
-    } 
+    }
     sim_report();
     return status;
 }
@@ -831,18 +831,18 @@ void sim_log( const char *format, ... ) {
 
 /*************************************************************
  * Part 3: This part contains simulation control for the TK
- * simulator. 
+ * simulator.
  *************************************************************/
 
 #ifdef HAS_GUI
 
 /**********************
- * Begin Part 3 globals	
+ * Begin Part 3 globals
  **********************/
 
 /* Hack for SunOS */
-extern int matherr();
-int *tclDummyMathPtr = (int *) matherr;
+// extern int matherr();
+// int *tclDummyMathPtr = (int *) matherr;
 
 static char tcl_msg[256];
 
@@ -852,7 +852,7 @@ static Tcl_Interp *sim_interp = NULL;
 static mem_t post_load_mem;
 
 /**********************
- * End Part 3 globals	
+ * End Part 3 globals
  **********************/
 
 
@@ -979,7 +979,7 @@ void addAppCommands(Tcl_Interp *interp)
 		      (ClientData) NULL, (Tcl_CmdDeleteProc *) NULL);
     Tcl_CreateCommand(interp, "simRun", (Tcl_CmdProc *) simRunCmd,
 		      (ClientData) NULL, (Tcl_CmdDeleteProc *) NULL);
-} 
+}
 
 /******************************************************************************
  *	tcl functionality called from within C
@@ -1081,7 +1081,7 @@ void signal_register_clear() {
     }
 }
 
-/* Provide mechanism for simulator to report instructions as they are 
+/* Provide mechanism for simulator to report instructions as they are
    read in
 */
 
@@ -1165,5 +1165,5 @@ int Tcl_AppInit(Tcl_Interp *interp)
 
 }
 
- 
+
 #endif /* HAS_GUI */
