@@ -174,7 +174,7 @@ char *cc_name(cc_t c);
 
 /* **************** Status types *******************/
 
-typedef enum 
+typedef enum
  {STAT_BUB, STAT_AOK, STAT_HLT, STAT_ADR, STAT_INS, STAT_PIP } stat_t;
 
 /* Describe Status */

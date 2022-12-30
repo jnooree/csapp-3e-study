@@ -127,7 +127,7 @@ void sim_set_dumpfile(FILE *file);
  */
 void sim_log( const char *format, ... );
 
- 
+
 /******************* GUI Interface Functions **********************/
 #ifdef HAS_GUI
 
@@ -150,4 +150,3 @@ void show_stat(stat_t stat);
 void create_memory_display();
 void set_memory(word_t addr, word_t val);
 #endif
-								       
