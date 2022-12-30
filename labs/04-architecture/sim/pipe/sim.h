@@ -1,3 +1,5 @@
+#ifndef CSAPP_ARCH_PIPE_SIM_H_
+#define CSAPP_ARCH_PIPE_SIM_H_
 
 /********** Typedefs ************/
 
@@ -150,3 +152,5 @@ void show_stat(stat_t stat);
 void create_memory_display();
 void set_memory(word_t addr, word_t val);
 #endif
+
+#endif /* CSAPP_ARCH_PIPE_SIM_H_ */

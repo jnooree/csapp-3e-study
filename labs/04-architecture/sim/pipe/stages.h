@@ -3,6 +3,11 @@
  * Declares the functions that implement the pipeline stages
  */
 
+#ifndef CSAPP_ARCH_PIPE_STAGES_H_
+#define CSAPP_ARCH_PIPE_STAGES_H_
+
+#include "isa.h"
+
 /********** Pipeline register contents **************/
 
 /* Program Counter */
@@ -86,3 +91,5 @@ void do_mem_stage();
 
 /* Set stalling conditions for different stages */
 void do_stall_check();
+
+#endif /* CSAPP_ARCH_PIPE_STAGES_H_ */

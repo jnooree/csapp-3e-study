@@ -10,6 +10,8 @@
        Changed J_XX and jump_t to C_XX and cond_t; take_branch to cond_holds
        Expanded RRMOVL to include conditional moves
 */
+#ifndef CSAPP_ARCH_MISC_ISA_H_
+#define CSAPP_ARCH_MISC_ISA_H_
 
 /**************** Registers *************************/
 
@@ -208,3 +210,5 @@ void report_line(word_t line_no, word_t addr, char *hexcode, char *line);
 void signal_register_update(reg_id_t r, word_t val);
 
 #endif
+
+#endif /* CSAPP_ARCH_MISC_ISA_H_ */
