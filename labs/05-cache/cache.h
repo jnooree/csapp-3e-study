@@ -9,9 +9,6 @@ typedef enum {
   kEvict = 0x4,
 } CacheOpResult;
 
-struct Cache;
-extern struct Cache cache;
-
 extern void init_cache(void);
 extern void fini_cache(void);
 

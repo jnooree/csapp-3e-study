@@ -18,7 +18,7 @@ struct Cache {
   struct CacheSet *sets; /* params.setsz sets */
 };
 
-struct Cache cache;
+static struct Cache cache;
 static uint64_t tick = 0;
 
 void init_cache(void) {
