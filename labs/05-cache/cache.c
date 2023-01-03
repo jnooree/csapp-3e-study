@@ -49,27 +49,34 @@ CacheOpResult access_cache(uint64_t addr) {
 
   for (i = 0; i < params.lines; ++i) {
     curr_tag = set->lines[i].tag;
+
+    // Cache hit
     if (curr_tag == tag) {
       ret = kHit;
+      argmin = i;
       goto epilog;
     }
 
+    // Invalid cache line
     if (curr_tag < 0) {
       min_ts = 0UL;
       argmin = i;
-    } else if (min_ts > set->ts[i]) {
+      break;
+    }
+
+    // For LRU policy
+    if (min_ts > set->ts[i]) {
       min_ts = set->ts[i];
       argmin = i;
     }
   }
 
-  i = argmin;
-  set->lines[i].tag = tag;
+  set->lines[argmin].tag = tag;
   if (min_ts)
     ret |= kEvict;
 
 epilog:
-  set->ts[i] = ++tick;
+  set->ts[argmin] = ++tick;
   return ret;
 }
 
