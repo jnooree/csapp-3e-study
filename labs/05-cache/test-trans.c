@@ -22,9 +22,6 @@
    student submits for credit */
 #define SUBMIT_DESCRIPTION "Transpose submission"
 
-/* External function defined in trans.c */
-extern void registerFunctions();
-
 /* External variables defined in cachelab-tools.c */
 extern trans_func_t func_list[MAX_TRANS_FUNCS];
 extern int func_counter;

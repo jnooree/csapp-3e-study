@@ -35,4 +35,7 @@ extern void registerTransFunction(void (*trans)(int M, int N, int[N][M],
                                                 int[M][N]),
                                   char *desc);
 
+/* External function defined in trans.c */
+extern void registerFunctions(void);
+
 #endif /* CACHELAB_TOOLS_H */
