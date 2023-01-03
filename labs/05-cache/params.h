@@ -27,6 +27,6 @@ enum Retvals {
 extern const char *progname;
 
 extern void print_help(void);
-extern int parse_args(const char *argv[]);
+extern int parse_args(int argc, char *const argv[]);
 
 #endif /* CSAPP_CACHE_ARGPARSE_H_ */

@@ -1,43 +1,14 @@
 #include "params.h"
 
 #include <errno.h>
+#include <getopt.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
+#include <unistd.h>
 
 struct Params params;
 const char *progname;
-
-static int parse_str(const char **arg, char argn, const char ***argv,
-                     int start) {
-  const char *curr = **argv;
-
-  if (curr[start]) {
-    *arg = &curr[start];
-    return 0;
-  }
-
-  *arg = *(++(*argv));
-  if (!*arg) {
-    printf("%s: option requires an argument -- '%c'\n", progname, argn);
-    return kHelp;
-  }
-
-  return 0;
-}
-
-static int parse_int(int *arg, char argn, const char ***argv, int start) {
-  const char *raw;
-  int err;
-
-  err = parse_str(&raw, argn, argv, start);
-  if (err)
-    return err;
-
-  *arg = atoi(raw);
-  return errno ? kErr : kOk;
-}
 
 static void setup_params(void) {
   uint64_t rev_blkmsk = ~0UL << params.b;
@@ -63,62 +34,53 @@ void print_help(void) {
          progname, progname, progname);
 }
 
-int parse_args(const char *argv[]) {
-  int err = kOk, i, len;
+int parse_args(int argc, char *const argv[]) {
+  int err = kOk;
   int index_set = 0, lines_set = 0, offset_set = 0, trace_set = 0;
-  const char *arg;
   char c;
 
+  progname = argv[0];
   params.verbose = 0;
 
-  for (; (arg = *++argv);)
-    if (arg[0] == '-') {
-      len = strlen(arg);
-      for (i = 1; i < len; ++i) {
-        c = arg[i];
-
-        if (c == 'h')
-          return 1;
-
-        if (c == 'v') {
-          params.verbose = 1;
-          continue;
-        }
-
-        ++i;
-        switch (c) {
-        case 's':
-          err = parse_int(&params.s, c, &argv, i);
-          index_set = !err;
-          break;
-        case 'E':
-          err = parse_int(&params.lines, c, &argv, i);
-          lines_set = !err;
-          break;
-        case 'b':
-          err = parse_int(&params.b, c, &argv, i);
-          offset_set = !err;
-          break;
-        case 't':
-          err = parse_str(&params.trace, c, &argv, i);
-          trace_set = !err;
-          break;
-        default:
-          printf("%s: invalid option -- '%c'\n", progname, c);
-          return 1;
-        }
-
-        break;
-      }
-
-      if (err)
-        break;
+  // NOLINTNEXTLINE(clang-diagnostic-implicit-int-conversion,concurrency-*)
+  while ((c = getopt(argc, argv, "hvs:E:b:t:")) != -1) {
+    switch (c) {
+    case 'h':
+      return kHelp;
+    case 'v':
+      params.verbose = 1;
+      break;
+    case 's':
+      params.s = atoi(optarg);
+      index_set = 1;
+      break;
+    case 'E':
+      params.lines = atoi(optarg);
+      lines_set = 1;
+      break;
+    case 'b':
+      params.b = atoi(optarg);
+      offset_set = 1;
+      break;
+    case 't':
+      params.trace = optarg;
+      trace_set = 1;
+      break;
+    default:
+      err = kHelp;
+      break;
     }
+
+    if (err)
+      break;
+
+    err = errno ? kErr : kOk;
+  }
 
   err |= !(index_set && lines_set && offset_set && trace_set);
   if (err == kErr)
     printf("%s: Missing required command line argument\n", progname);
-  if (err == kOk)
+  else if (err == kOk)
     setup_params();
 
   return err;

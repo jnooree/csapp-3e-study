@@ -68,13 +68,10 @@ static int run(void) {
   return 0;
 }
 
-// NOLINTNEXTLINE(*-unused-parameter*)
-int main(int argc, const char *argv[]) {
+int main(int argc, char *const argv[]) {
   int early_stop, ret;
 
-  progname = argv[0];
-
-  early_stop = parse_args(argv);
+  early_stop = parse_args(argc, argv);
   if (early_stop) {
     print_help();
     return 0;
