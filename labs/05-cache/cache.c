@@ -7,10 +7,10 @@
 
 struct CacheLine {
   int64_t tag; /* < 0: invalid, >= 0: valid */
+  uint64_t ts; /* Timestamp */
 };
 
 struct CacheSet {
-  uint64_t *ts;            /* params.lines stamps */
   struct CacheLine *lines; /* params.lines lines */
 };
 
@@ -27,7 +27,6 @@ void init_cache(void) {
   cache.sets = malloc(sizeof(struct CacheSet) * params.setsz);
 
   for (i = 0; i < params.setsz; ++i) {
-    cache.sets[i].ts = malloc(sizeof(uint64_t) * params.lines);
     cache.sets[i].lines = malloc(sizeof(struct CacheLine) * params.lines);
 
     for (j = 0; j < params.lines; ++j)
@@ -38,8 +37,8 @@ void init_cache(void) {
 CacheOpResult access_cache(uint64_t addr) {
   int64_t tag = (params.tagmsk & addr) >> 1,
           setid = (params.setmsk & addr) >> params.b;
-  int64_t curr_tag;
   struct CacheSet *set = &cache.sets[setid];
+  struct CacheLine *curr_line;
 
   CacheOpResult ret = kMiss;
   uint64_t min_ts = ~0UL;
@@ -48,45 +47,43 @@ CacheOpResult access_cache(uint64_t addr) {
   int i;
 
   for (i = 0; i < params.lines; ++i) {
-    curr_tag = set->lines[i].tag;
+    curr_line = &set->lines[i];
 
     // Cache hit
-    if (curr_tag == tag) {
+    if (curr_line->tag == tag) {
       ret = kHit;
-      argmin = i;
       goto epilog;
     }
 
     // Invalid cache line
-    if (curr_tag < 0) {
+    if (curr_line->tag < 0) {
       min_ts = 0UL;
       argmin = i;
       break;
     }
 
     // For LRU policy
-    if (min_ts > set->ts[i]) {
-      min_ts = set->ts[i];
+    if (min_ts > curr_line->ts) {
+      min_ts = curr_line->ts;
       argmin = i;
     }
   }
 
-  set->lines[argmin].tag = tag;
+  curr_line = &set->lines[argmin];
+  curr_line->tag = tag;
   if (min_ts)
     ret |= kEvict;
 
 epilog:
-  set->ts[argmin] = ++tick;
+  curr_line->ts = ++tick;
   return ret;
 }
 
 void fini_cache(void) {
   uint64_t i;
 
-  for (i = 0; i < params.setsz; ++i) {
+  for (i = 0; i < params.setsz; ++i)
     free(cache.sets[i].lines);
-    free(cache.sets[i].ts);
-  }
 
   free(cache.sets);
 }
