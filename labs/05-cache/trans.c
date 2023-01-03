@@ -7,11 +7,9 @@
  * A transpose function is evaluated by counting the number of misses
  * on a 1KB direct mapped cache with a block size of 32 bytes.
  */
-#include <stdio.h>
-
 #include "cachelab.h"
 
-int is_transpose(int M, int N, int A[N][M], int B[M][N]);
+static int is_transpose(int M, int N, int A[N][M], int B[M][N]);
 
 /*
  * transpose_submit - This is the solution transpose function that you
@@ -20,9 +18,9 @@ int is_transpose(int M, int N, int A[N][M], int B[M][N]);
  *     searches for that string to identify the transpose function to
  *     be graded.
  */
-char transpose_submit_desc[] = "Transpose submission";
+static char transpose_submit_desc[] = "Transpose submission";
 
-void transpose_submit(int M, int N, int A[N][M], int B[M][N]) { }
+static void transpose_submit(int M, int N, int A[N][M], int B[M][N]) { }
 
 /*
  * You can define additional transpose functions below. We've defined
@@ -32,9 +30,9 @@ void transpose_submit(int M, int N, int A[N][M], int B[M][N]) { }
 /*
  * trans - A simple baseline transpose function, not optimized for the cache.
  */
-char trans_desc[] = "Simple row-wise scan transpose";
+static char trans_desc[] = "Simple row-wise scan transpose";
 
-void trans(int M, int N, int A[N][M], int B[M][N]) {
+static void trans(int M, int N, int A[N][M], int B[M][N]) {
   int i, j, tmp;
 
   for (i = 0; i < N; i++) {
@@ -52,7 +50,7 @@ void trans(int M, int N, int A[N][M], int B[M][N]) {
  *     performance. This is a handy way to experiment with different
  *     transpose strategies.
  */
-void registerFunctions() {
+void registerFunctions(void) {
   /* Register your solution function */
   registerTransFunction(transpose_submit, transpose_submit_desc);
 
@@ -65,7 +63,7 @@ void registerFunctions() {
  *     A. You can check the correctness of your transpose by calling
  *     it before returning from the transpose function.
  */
-int is_transpose(int M, int N, int A[N][M], int B[M][N]) {
+static int is_transpose(int M, int N, int A[N][M], int B[M][N]) {
   int i, j;
 
   for (i = 0; i < N; i++) {
