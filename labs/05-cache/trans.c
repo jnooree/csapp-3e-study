@@ -12,17 +12,6 @@
 static int is_transpose(int M, int N, int A[N][M], int B[M][N]);
 
 /*
- * transpose_submit - This is the solution transpose function that you
- *     will be graded on for Part B of the assignment. Do not change
- *     the description string "Transpose submission", as the driver
- *     searches for that string to identify the transpose function to
- *     be graded.
- */
-static char transpose_submit_desc[] = "Transpose submission";
-
-static void transpose_submit(int M, int N, int A[N][M], int B[M][N]) { }
-
-/*
  * You can define additional transpose functions below. We've defined
  * a simple one below to help you get started.
  */
@@ -42,6 +31,17 @@ static void trans(int M, int N, int A[N][M], int B[M][N]) {
     }
   }
 }
+
+/*
+ * transpose_submit - This is the solution transpose function that you
+ *     will be graded on for Part B of the assignment. Do not change
+ *     the description string "Transpose submission", as the driver
+ *     searches for that string to identify the transpose function to
+ *     be graded.
+ */
+static char *transpose_submit_desc = "Transpose submission";
+
+static void (*transpose_submit)(int M, int N, int A[N][M], int B[M][N]) = trans;
 
 /*
  * registerFunctions - This function registers your transpose
