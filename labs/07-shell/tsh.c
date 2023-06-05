@@ -4,7 +4,6 @@
  * <Put your name and login ID here>
  */
 #include <errno.h>
-#include <pthread.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -41,9 +40,6 @@ static char prompt[] = "tsh> "; /* command line prompt (DO NOT CHANGE) */
 static int verbose = 0;         /* if true, print additional output */
 static int nextjid = 1;         /* next job ID to allocate */
 
-static pthread_mutex_t jobs_lock = PTHREAD_MUTEX_INITIALIZER;
-static pthread_cond_t wait_var = PTHREAD_COND_INITIALIZER;
-
 struct job_t {           /* The job struct */
   pid_t pid;             /* job PID */
   int jid;               /* job ID [1, 2, ...] */
@@ -59,10 +55,15 @@ static struct job_t jobs[MAXJOBS]; /* The job list */
 static void eval(char *cmdline);
 static int builtin_cmd(char **argv);
 static void do_bgfg(char **argv);
-static void waitfg(void);
+static void waitfg(pid_t pid);
 static void infobg(struct job_t *job);
 
+static void block_sigchld(sigset_t *oldset);
+static void restore_signal(sigset_t *oldset);
+
 static void sigchld_handler(int sig);
+static void reap_child(pid_t pid, int status);
+static void wait_childs(void);
 static void sigint_tstp_handler(int sig);
 
 /* Here are helper routines that we've provided for you */
@@ -164,6 +165,7 @@ int main(int argc, char **argv) {
 void eval(char *cmdline) {
   static char *argv[MAXARGS + 1];
   struct job_t *job;
+  sigset_t oldset;
 
   int bg, builtin;
   pid_t pid;
@@ -176,25 +178,30 @@ void eval(char *cmdline) {
   if (builtin)
     return;
 
-  pthread_mutex_lock(&jobs_lock);
+  block_sigchld(&oldset);
 
   pid = fork();
   if (pid < 0) {
     perror("fork");
-    goto unlock;
+    restore_signal(&oldset);
+    return;
   }
 
   if (pid == 0) {
     setpgid(0, 0);
+    restore_signal(&oldset);
     if (execvp(argv[0], argv))
       unix_error(argv[0]);
   }
 
   job = addjob(pid, bg ? BG : FG, cmdline);
-  bg ? infobg(job) : waitfg();
+  if (bg)
+    infobg(job);
 
-unlock:
-  pthread_mutex_unlock(&jobs_lock);
+  restore_signal(&oldset);
+
+  if (!bg)
+    waitfg(pid);
 }
 
 /*
@@ -280,9 +287,11 @@ void do_bgfg(char **argv) {
     "%s: No such job\n",
   };
 
+  sigset_t oldset;
   struct job_t *job;
   char *id_ptr, *endptr;
   int bg, id, arg_jid;
+  pid_t pid;
 
   if (argv[1] == NULL) {
     printf("%s command requires PID or %%jobid argument\n", argv[0]);
@@ -292,35 +301,57 @@ void do_bgfg(char **argv) {
   arg_jid = argv[1][0] == '%';
   id_ptr = argv[1] + arg_jid;
 
+  errno = 0;
   id = strtol(id_ptr, &endptr, 10);
   if (id_ptr == endptr || *endptr != '\0' || errno) {
     printf("%s: argument must be a PID or %%jobid\n", argv[0]);
+    restore_signal(&oldset);
     return;
   }
 
-  pthread_mutex_lock(&jobs_lock);
+  block_sigchld(&oldset);
 
   job = (arg_jid ? getjobjid : getjobpid)(id);
   if (job == NULL) {
     printf(fmt_str[arg_jid], argv[1]);
-    goto unlock;
+    restore_signal(&oldset);
+    return;
   }
 
   bg = argv[0][0] == 'b';
 
+  pid = job->pid;
   job->state = bg ? BG : FG;
   killpg(job->pid, SIGCONT);
-  bg ? infobg(job) : waitfg();
+  if (bg)
+    infobg(job);
 
-unlock:
-  pthread_mutex_unlock(&jobs_lock);
+  restore_signal(&oldset);
+
+  if (!bg)
+    waitfg(pid);
 }
 
 /*
  * waitfg - Block until process pid is no longer the foreground process
  */
-void waitfg(void) {
-  pthread_cond_wait(&wait_var, &jobs_lock);
+void waitfg(pid_t pid) {
+  int ret, status;
+  sigset_t oldset;
+
+  ret = waitpid(pid, &status, WUNTRACED);
+  if (ret == -1) {
+    if (errno != ECHILD)
+      unix_error("waitfg");
+    return;
+  }
+
+  block_sigchld(&oldset);
+
+  reap_child(pid, status);
+  wait_childs();
+
+  restore_signal(&oldset);
 }
 
 void infobg(struct job_t *job) {
@@ -330,42 +361,53 @@ void infobg(struct job_t *job) {
 /*****************
  * Signal handlers
  *****************/
+void block_sigchld(sigset_t *oldset) {
+  sigset_t new_set;
 
-struct ThreadArgs {
-  pid_t pid;
-  int status;
-};
+  sigemptyset(&new_set);
+  sigaddset(&new_set, SIGCHLD);
+  sigprocmask(SIG_BLOCK, &new_set, oldset);
+}
 
-static void *reaper(void *args) {
+void restore_signal(sigset_t *oldset) {
+  sigprocmask(SIG_SETMASK, oldset, NULL);
+}
+
+void reap_child(pid_t pid, int status) {
   struct job_t *job;
-  struct ThreadArgs *targs = args;
 
-  pthread_mutex_lock(&jobs_lock);
-
-  job = getjobpid(targs->pid);
+  job = getjobpid(pid);
   if (job == NULL)
-    goto exit;
+    return;
 
-  if (WIFSTOPPED(targs->status)) {
+  if (WIFSTOPPED(status)) {
     printf("Job [%d] (%d) stopped by signal %d\n", job->jid, job->pid,
-           WSTOPSIG(targs->status));
+           WSTOPSIG(status));
 
     job->state = ST;
-    goto notify_exit;
+    return;
   }
 
-  if (WIFSIGNALED(targs->status))
+  if (WIFSIGNALED(status))
     printf("Job [%d] (%d) terminated by signal %d\n", job->jid, job->pid,
-           WTERMSIG(targs->status));
+           WTERMSIG(status));
 
   deletejob(job);
+}
 
-notify_exit:
-  pthread_cond_signal(&wait_var);
-exit:
-  pthread_mutex_unlock(&jobs_lock);
-  free(args);
-  return NULL;
+void wait_childs(void) {
+  int status;
+  pid_t pid;
+
+  while ((pid = waitpid(WAIT_ANY, &status, WNOHANG | WUNTRACED)) != 0) {
+    if (pid == -1) {
+      if (errno != ECHILD)
+        perror("wait_childs");
+      break;
+    }
+
+    reap_child(pid, status);
+  }
 }
 
 /*
@@ -376,38 +418,9 @@ exit:
  *     currently running children to terminate.
  */
 void sigchld_handler(__attribute__((unused)) int sig) {
-  int status;
-  pid_t pid;
-
-  pthread_t thread;
-  struct ThreadArgs *args;
-
-  pid = waitpid(WAIT_ANY, &status, WNOHANG | WUNTRACED);
-  if (pid == 0)
-    return;
-
-  args = malloc(sizeof(*args));
-  args->status = status;
-  args->pid = pid;
-  pthread_create(&thread, NULL, reaper, args);
-  pthread_detach(thread);
-}
-
-static void *signaller(void *args) {
-  struct job_t *job;
-  int sig = (int)args;
-
-  pthread_mutex_lock(&jobs_lock);
-
-  job = getjobfg();
-  if (job == NULL)
-    goto unlock;
-
-  killpg(job->pid, sig);
-
-unlock:
-  pthread_mutex_unlock(&jobs_lock);
-  return NULL;
+  int errno_save = errno;
+  wait_childs();
+  errno = errno_save;
 }
 
 /*
@@ -416,9 +429,19 @@ unlock:
  *    to the foreground job.
  */
 void sigint_tstp_handler(int sig) {
-  pthread_t thread;
-  pthread_create(&thread, NULL, signaller, (void *)sig);
-  pthread_detach(thread);
+  struct job_t *job;
+  sigset_t oldset;
+
+  block_sigchld(&oldset);
+
+  job = getjobfg();
+  if (job == NULL)
+    goto restore;
+
+  killpg(job->pid, sig);
+
+restore:
+  restore_signal(&oldset);
 }
 
 /*********************
@@ -453,14 +476,10 @@ void destructjob(struct job_t *job) {
 }
 
 void do_quit(void) {
-  sigset_t new_set;
+  sigset_t oldset;
   int i;
 
-  sigemptyset(&new_set);
-  sigaddset(&new_set, SIGCHLD);
-  sigprocmask(SIG_BLOCK, &new_set, NULL);
-
-  pthread_mutex_lock(&jobs_lock);
+  block_sigchld(&oldset);
 
   for (i = 0; i < MAXJOBS; i++)
     destructjob(&jobs[i]);
@@ -548,8 +567,9 @@ struct job_t *getjobjid(int jid) {
 /* listjobs - Print the job list */
 void listjobs(void) {
   int i;
+  sigset_t oldset;
 
-  pthread_mutex_lock(&jobs_lock);
+  block_sigchld(&oldset);
 
   for (i = 0; i < MAXJOBS; i++) {
     if (jobs[i].pid != 0) {
@@ -571,7 +591,7 @@ void listjobs(void) {
     }
   }
 
-  pthread_mutex_unlock(&jobs_lock);
+  restore_signal(&oldset);
 }
 
 /******************************

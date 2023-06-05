@@ -11,7 +11,7 @@ FILES = $(TSH) ./myspin ./mysplit ./mystop ./myint
 all: $(FILES)
 
 $(TSH): $(TSH).c
-	$(CC) $(CFLAGS) -pthread -o $(TSH) $(TSH).c
+	$(CC) $(CFLAGS) -o $(TSH) $(TSH).c
 
 ##################
 # Regression tests
