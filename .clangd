@@ -17,6 +17,7 @@ CompileFlags:
     - -Wno-exit-time-destructors
     - -Wno-global-constructors
     - -Wno-thread-safety-negative
+    - -Wno-unsafe-buffer-usage
 Style:
   FullyQualifiedNamespaces: true
 Diagnostics:
