@@ -8,6 +8,7 @@ CompileFlags:
     - -Wno-sign-compare
     - -Wno-sign-conversion
     - -Wno-shorten-64-to-32
+    - -Wno-cast-align
     - -Wno-c++98-compat
     - -Wno-c++98-compat-pedantic
     - -Wno-c++98-c++11-compat-binary-literal

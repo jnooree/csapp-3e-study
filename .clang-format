@@ -200,4 +200,6 @@ BitFieldColonSpacing: Both
 TabWidth: 2
 UseCRLF: false
 UseTab: Never
-...
+ForEachMacros:
+  - free_for
+  - class_for
