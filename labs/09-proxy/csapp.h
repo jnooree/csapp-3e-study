@@ -63,11 +63,11 @@ extern char **environ; /* Defined by libc */
 #define LISTENQ 1024 /* Second argument to listen() */
 
 /* Our own error-handling functions */
-void unix_error(char *msg);
-void posix_error(int code, char *msg);
-void dns_error(char *msg);
-void gai_error(int code, char *msg);
-void app_error(char *msg);
+_Noreturn void unix_error(char *msg);
+_Noreturn void posix_error(int code, char *msg);
+_Noreturn void dns_error(char *msg);
+_Noreturn void gai_error(int code, char *msg);
+_Noreturn void app_error(char *msg);
 
 /* Process control wrappers */
 pid_t Fork(void);
@@ -95,12 +95,12 @@ int Sigsuspend(const sigset_t *set);
 /* Sio (Signal-safe I/O) routines */
 ssize_t sio_puts(char s[]);
 ssize_t sio_putl(long v);
-void sio_error(char s[]);
+_Noreturn void sio_error(char s[]);
 
 /* Sio wrappers */
 ssize_t Sio_puts(char s[]);
 ssize_t Sio_putl(long v);
-void Sio_error(char s[]);
+_Noreturn void Sio_error(char s[]);
 
 /* Unix I/O wrappers */
 int Open(const char *pathname, int flags, mode_t mode);
@@ -165,7 +165,7 @@ void Pthread_create(pthread_t *tidp, pthread_attr_t *attrp,
 void Pthread_join(pthread_t tid, void **thread_return);
 void Pthread_cancel(pthread_t tid);
 void Pthread_detach(pthread_t tid);
-void Pthread_exit(void *retval);
+_Noreturn void Pthread_exit(void *retval);
 pthread_t Pthread_self(void);
 void Pthread_once(pthread_once_t *once_control, void (*init_function)());
 
