@@ -577,6 +577,9 @@ static int eval_mm_valid(trace_t *trace, int tracenum, range_t **ranges) {
     return 0;
   }
 
+  memset(trace->blocks, 0, sizeof(trace->blocks[0]) * trace->num_ids);
+  memset(trace->block_sizes, 0, sizeof(trace->block_sizes[0]) * trace->num_ids);
+
   /* Interpret each operation in the trace in order */
   for (i = 0; i < trace->num_ops; i++) {
     index = trace->ops[i].index;
@@ -615,7 +618,8 @@ static int eval_mm_valid(trace_t *trace, int tracenum, range_t **ranges) {
 
       /* Call the student's realloc */
       oldp = trace->blocks[index];
-      if ((newp = mm_realloc(oldp, size)) == NULL) {
+      newp = mm_realloc(oldp, size);
+      if (newp == NULL && size != 0) {
         malloc_error(tracenum, i, "mm_realloc failed.");
         return 0;
       }
@@ -624,8 +628,9 @@ static int eval_mm_valid(trace_t *trace, int tracenum, range_t **ranges) {
       remove_range(ranges, oldp);
 
       /* Check new block for correctness and add it to range list */
-      if (add_range(ranges, newp, size, tracenum, i) == 0)
-        return 0;
+      if (size > 0)
+        if (add_range(ranges, newp, size, tracenum, i) == 0)
+          return 0;
 
       /* ADDED: cgw
        * Make sure that the new block contains the data from the old
@@ -636,7 +641,7 @@ static int eval_mm_valid(trace_t *trace, int tracenum, range_t **ranges) {
       if (size < oldsize)
         oldsize = size;
       for (j = 0; j < oldsize; j++) {
-        if (newp[j] != (index & 0xFF)) {
+        if (newp[j] != (char)(index & 0xFF)) {
           malloc_error(tracenum, i,
                        "mm_realloc did not preserve the "
                        "data from old block");
@@ -653,8 +658,12 @@ static int eval_mm_valid(trace_t *trace, int tracenum, range_t **ranges) {
     case FREE: /* mm_free */
 
       /* Remove region from list and call student's free function */
-      p = trace->blocks[index];
-      remove_range(ranges, p);
+      if (index == -1) {
+        p = NULL;
+      } else {
+        p = trace->blocks[index];
+        remove_range(ranges, p);
+      }
       mm_free(p);
       break;
 
@@ -692,6 +701,9 @@ static double eval_mm_util(trace_t *trace, int tracenum, range_t **ranges) {
   if (mm_init() < 0)
     app_error("mm_init failed in eval_mm_util");
 
+  memset(trace->blocks, 0, sizeof(trace->blocks[0]) * trace->num_ids);
+  memset(trace->block_sizes, 0, sizeof(trace->block_sizes[0]) * trace->num_ids);
+
   for (i = 0; i < trace->num_ops; i++) {
     switch (trace->ops[i].type) {
     case ALLOC: /* mm_alloc */
@@ -720,7 +732,8 @@ static double eval_mm_util(trace_t *trace, int tracenum, range_t **ranges) {
       oldsize = trace->block_sizes[index];
 
       oldp = trace->blocks[index];
-      if ((newp = mm_realloc(oldp, newsize)) == NULL)
+      newp = mm_realloc(oldp, newsize);
+      if (newp == NULL && newsize != 0)
         app_error("mm_realloc failed in eval_mm_util");
 
       /* Remember region and size */
@@ -738,8 +751,14 @@ static double eval_mm_util(trace_t *trace, int tracenum, range_t **ranges) {
 
     case FREE: /* mm_free */
       index = trace->ops[i].index;
-      size = trace->block_sizes[index];
-      p = trace->blocks[index];
+
+      if (index == -1) {
+        size = 0;
+        p = NULL;
+      } else {
+        size = trace->block_sizes[index];
+        p = trace->blocks[index];
+      }
 
       mm_free(p);
 
@@ -771,6 +790,9 @@ static void eval_mm_speed(void *ptr) {
   if (mm_init() < 0)
     app_error("mm_init failed in eval_mm_speed");
 
+  memset(trace->blocks, 0, sizeof(trace->blocks[0]) * trace->num_ids);
+  memset(trace->block_sizes, 0, sizeof(trace->block_sizes[0]) * trace->num_ids);
+
   /* Interpret each trace request */
   for (i = 0; i < trace->num_ops; i++)
     switch (trace->ops[i].type) {
@@ -786,14 +808,18 @@ static void eval_mm_speed(void *ptr) {
       index = trace->ops[i].index;
       newsize = trace->ops[i].size;
       oldp = trace->blocks[index];
-      if ((newp = mm_realloc(oldp, newsize)) == NULL)
+      newp = mm_realloc(oldp, newsize);
+      if (newp == NULL && newsize != 0)
         app_error("mm_realloc error in eval_mm_speed");
       trace->blocks[index] = newp;
       break;
 
     case FREE: /* mm_free */
       index = trace->ops[i].index;
-      block = trace->blocks[index];
+      if (index == -1)
+        block = NULL;
+      else
+        block = trace->blocks[index];
       mm_free(block);
       break;
 
