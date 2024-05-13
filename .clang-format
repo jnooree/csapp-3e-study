@@ -203,3 +203,4 @@ UseTab: Never
 ForEachMacros:
   - free_for
   - class_for
+  - class_for_from
