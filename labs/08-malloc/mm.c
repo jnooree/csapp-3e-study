@@ -12,6 +12,7 @@
 #include "mm.h"
 
 #include <assert.h>
+#include <limits.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -37,6 +38,31 @@ team_t team = {
   ""
 };
 
+#ifndef MM_LOGLVL
+#ifdef MM_DEBUG
+#define MM_LOGLVL MM_DEBUG
+#else
+#define MM_LOGLVL 0
+#endif
+#endif
+
+// NOLINTBEGIN(clang-diagnostic-gnu-zero-variadic-macro-arguments)
+
+#define mm_log_impl(level, fmt, ...)                                           \
+  fprintf(stderr, #level ": %s:%d: " fmt, __func__, __LINE__, ##__VA_ARGS__)
+
+#define mm_dlog(fmt, ...)                                                      \
+  if (MM_LOGLVL > 1)                                                           \
+  mm_log_impl(debug, fmt, ##__VA_ARGS__)
+
+#define mm_log(fmt, ...)                                                       \
+  if (MM_LOGLVL)                                                               \
+  mm_log_impl(info, fmt, ##__VA_ARGS__)
+
+#define mm_error(fmt, ...) mm_log_impl(error, fmt, ##__VA_ARGS__)
+
+// NOLINTEND(clang-diagnostic-gnu-zero-variadic-macro-arguments)
+
 #define WSIZE     4
 #define DSIZE     8
 #define CHUNKSIZE (1 << 12)
@@ -46,6 +72,7 @@ team_t team = {
 #define ALIGN(size) (((size) + ~SIZE_MASK) & SIZE_MASK)
 
 #define MAX(x, y) ((x) < (y) ? (y) : (x))
+#define MIN(x, y) ((x) > (y) ? (y) : (x))
 
 #define MIN_ALLOC        ALIGN(sizeof(struct free_list) + DSIZE)
 #define ALLOC_SIZE(size) ALIGN(MAX(sizeof(struct free_list), size) + DSIZE)
@@ -57,16 +84,23 @@ team_t team = {
 #define SIZE(mp)          (GET(mp) & SIZE_MASK)
 #define ALOC(mp)          (GET(mp) & 0x1)
 
-#define HDRP(bp) ((char *)(bp) - WSIZE)
-#define FTRP(bp) ((char *)(bp) + SIZE(HDRP(bp)) - DSIZE)
+#define HDRP(bp)  ((char *)(bp) - WSIZE)
+#define PFTRP(bp) ((char *)(bp) - DSIZE)
+
+#define PREVBLK(bp) ((char *)(bp) - SIZE(PFTRP(bp)))
+#define NEXTBLK(bp) ((char *)(bp) + SIZE(HDRP(bp)))
+
+#define FTRP(bp) PFTRP(NEXTBLK(bp))
+
 #define META_PUT(bp, size_alloc)                                               \
   do {                                                                         \
     PUT(HDRP(bp), size_alloc);                                                 \
     PUT(FTRP(bp), size_alloc);                                                 \
   } while (0)
 
-#define PREVBLK(bp) ((char *)(bp) - SIZE(HDRP(bp) - WSIZE))
-#define NEXTBLK(bp) ((char *)(bp) + SIZE(HDRP(bp)))
+static const char *printbool(int b) {
+  return b ? "true" : "false";
+}
 
 struct free_list {
   struct free_list *next;
@@ -77,16 +111,10 @@ struct class_list {
   struct free_list head;
 };
 
+static struct class_list *begin_heap = NULL;
+static void *end_heap = NULL;
+
 static int mm_check(void);
-
-static void zfill_free_node(struct free_list *node) {
-#ifdef MM_DEBUG
-  size_t bufsz = SIZE(HDRP(node)) - DSIZE - sizeof(*node);
-
-  memset(++node, 0, bufsz);
-#endif
-  (void)(node);
-}
 
 #define free_for(list, head)                                                   \
   for ((list) = (head)->next; (list) != (head); (list) = (list)->next)
@@ -115,15 +143,29 @@ static void *free_list_remove(struct free_list *node) {
   return node;
 }
 
-static struct class_list *begin_heap = NULL;
-static void *end_heap = NULL;
+#define class_for_from(curr, curr_init, cls)                                   \
+  for ((curr) = (curr_init), (cls) = MIN_ALLOC << ((curr) - begin_heap);       \
+       (cls) <= CHUNKSIZE; ++(curr), (cls) <<= 1)
 
-#define class_for(curr, cls)                                                   \
-  for ((curr) = begin_heap, (cls) = MIN_ALLOC; (cls) <= CHUNKSIZE;             \
-       ++(curr), (cls) <<= 1)
+#define class_for(curr, cls) class_for_from (curr, begin_heap, cls)
 
-static int isclass(size_t sz, size_t cls) {
-  return sz >= cls && (sz < (cls << 1) || cls == CHUNKSIZE);
+static int last_set_bit(unsigned int arg) {
+  return CHAR_BIT * (int)sizeof(arg) - __builtin_clz(arg) - 1;
+}
+
+static struct class_list *classof(size_t sz) {
+  int lastbit, minbit, maxbit, clsidx;
+
+  lastbit = last_set_bit(sz);
+
+  minbit = last_set_bit(MIN_ALLOC);
+  maxbit = last_set_bit(CHUNKSIZE);
+
+  clsidx = MIN(lastbit - minbit, maxbit - minbit);
+  if (clsidx < 0)
+    mm_log("block size underflow");
+
+  return begin_heap + clsidx;
 }
 
 static void class_list_init(void) {
@@ -139,19 +181,13 @@ static void *resv_node(struct free_list *node) {
 }
 
 static struct free_list *free_node(void *node) {
-  size_t cls, size;
+  size_t size;
   struct class_list *clsp;
 
   size = GET(HDRP(node));
-
-  class_for (clsp, cls)
-    if (isclass(size, cls)) {
-      free_list_insert(&clsp->head, node);
-      zfill_free_node(node);
-      return node;
-    }
-
-  return NULL;
+  clsp = classof(size);
+  free_list_insert(&clsp->head, node);
+  return node;
 }
 
 static void *coalesce_will_free(void *ptr) {
@@ -208,6 +244,9 @@ static struct free_list *extend_heap(size_t minsize, void *oldend) {
   void *beginp;
   size_t reqsz;
 
+  if (oldend != NULL && !ALOC(PFTRP(oldend)))
+    minsize -= GET(PFTRP(oldend));
+
   reqsz = (MAX(CHUNKSIZE, minsize) + (CHUNKSIZE - 1)) & ~(CHUNKSIZE - 1);
 
   beginp = mem_sbrk(reqsz);
@@ -233,6 +272,8 @@ int mm_init(void) {
   void *beginp;
   char *blockp;
   size_t cls, prosz, blksz;
+
+  mm_log("init\n");
 
   beginp = extend_heap(CHUNKSIZE, NULL);
   if (beginp == NULL)
@@ -288,10 +329,7 @@ static void *allocate_block(size_t size) {
 
   node = NULL;
 
-  class_for (clsp, cls) {
-    if ((cls << 1) <= size)
-      continue;
-
+  class_for_from (clsp, classof(size), cls) {
     free_for (list, &clsp->head)
       if (GET(HDRP(list)) >= size) {
         node = list;
@@ -316,21 +354,23 @@ static void *allocate_block(size_t size) {
 
 void *mm_malloc(size_t size) {
   void *blk;
+
+  mm_log("size: 0x%x\n", size);
+
   if (size == 0)
     return NULL;
 
   size = ALLOC_SIZE(size);
   blk = allocate_block(size);
 
-  if (!mm_check())
+  if (blk && !mm_check())
     return NULL;
 
   return blk;
 }
 
-void mm_free(void *ptr) {
-  if (ptr == NULL)
-    return;
+__nonnull() static void mm_free_nonnull(void *ptr) {
+  mm_log("ptr: %p\n", ptr);
 
   ptr = coalesce_will_free(ptr);
   free_node(ptr);
@@ -338,51 +378,58 @@ void mm_free(void *ptr) {
   mm_check();
 }
 
+void mm_free(void *ptr) {
+  if (ptr == NULL)
+    return;
+
+  mm_free_nonnull(ptr);
+}
+
 void *mm_realloc(void *ptr, size_t size) {
   void *oldptr, *newptr;
-  size_t copysz;
-  int freed = 0;
+  size_t oldsz, copysz;
+
+  mm_log("ptr: %p, size: 0x%x\n", ptr, size);
+
+  if (ptr == NULL)
+    return mm_malloc(size);
 
   if (size == 0) {
-    mm_free(ptr);
+    mm_free_nonnull(ptr);
     return NULL;
   }
 
   size = ALLOC_SIZE(size);
 
-  if (ptr == NULL) {
-    newptr = allocate_block(size);
-    if (!mm_check())
-      return NULL;
-    return newptr;
-  }
-
   oldptr = ptr;
-  copysz = SIZE(HDRP(ptr)) - DSIZE;
-  ptr = coalesce_will_free(ptr);
+  oldsz = SIZE(HDRP(oldptr));
+  copysz = MIN(oldsz, size) - DSIZE;
 
-  if ((char *)oldptr - (char *)ptr >= copysz) {
-    free_node(ptr);
-    freed = 1;
-  } else if (size <= SIZE(HDRP(ptr))) {
+  ptr = coalesce_will_free(oldptr);
+
+  if (size <= GET(HDRP(ptr))) {
+    memmove(ptr, oldptr, copysz);
     free_tail_was_resvd(ptr, size);
+
     if (!mm_check())
       return NULL;
+
     return ptr;
   }
 
+  // prevent coalescing
+  META_PUT(ptr, PACK(GET(HDRP(ptr)), 1));
+
   newptr = allocate_block(size);
   if (newptr == NULL) {
-    if (freed)
-      resv_node(ptr);
-    uncoalesce_was_resvd(ptr, oldptr, copysz + DSIZE);
-    mm_check();
+    uncoalesce_was_resvd(ptr, oldptr, oldsz);
     return NULL;
   }
 
   memcpy(newptr, oldptr, copysz);
-  if (newptr != ptr)
-    free_node(ptr);
+
+  META_PUT(ptr, SIZE(HDRP(ptr)));
+  free_node(ptr);
 
   if (!mm_check())
     return NULL;
@@ -396,9 +443,11 @@ static int mm_check(void) {
   struct free_list *node;
   const char *reason;
   char *ptr;
-  size_t cls;
+  size_t cls, size;
 
   class_for (curr, cls) {
+    mm_dlog("cls: %x\n", cls);
+
     free_for (node, &curr->head) {
       if (ALOC(HDRP(node))) {
         ptr = (char *)node;
@@ -406,11 +455,14 @@ static int mm_check(void) {
         goto fail;
       }
 
-      if (!isclass(SIZE(HDRP(node)), cls)) {
+      size = SIZE(HDRP(node));
+      if (size < cls || (size >= (cls << 1) && cls != CHUNKSIZE)) {
         ptr = (char *)node;
         reason = "free node size is inconsistent with class";
         goto fail;
       }
+
+      mm_dlog("\tnode: %p: size: 0x%x\n", (void *)node, SIZE(HDRP(node)));
     }
   }
 
@@ -420,6 +472,9 @@ static int mm_check(void) {
       reason = "inconsistent header and footer";
       goto fail;
     }
+
+    mm_log("node: %p: size: 0x%x, allocated: %s\n", (void *)ptr,
+           SIZE(HDRP(ptr)), printbool(ALOC(HDRP(ptr))));
 
     if (ALOC(HDRP(ptr)))
       continue;
@@ -436,9 +491,8 @@ static int mm_check(void) {
 
 #ifdef MM_DEBUG
 fail:
-  fprintf(stderr, "error: mm_check: %s (addr: %p, size: %u, allocated: %s)\n",
-          reason, (void *)ptr, SIZE(HDRP(ptr)),
-          ALOC(HDRP(ptr)) ? "true" : "false");
+  mm_error("%s (addr: %p, size: %u, allocated: %s)\n", reason, (void *)ptr,
+           SIZE(HDRP(ptr)), printbool(ALOC(HDRP(ptr))));
   return 0;
 #endif
 }
