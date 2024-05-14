@@ -1,15 +1,422 @@
+#include <errno.h>
+#include <fcntl.h>
+#include <netdb.h>
+#include <stddef.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <strings.h>
+#include <time.h>
+#include <unistd.h>
+#include <sys/socket.h>
+#include <sys/time.h>
+#include <sys/types.h>
+
+#include "csapp.h"
 
 /* Recommended max cache and object sizes */
 #define MAX_CACHE_SIZE  1049000
 #define MAX_OBJECT_SIZE 102400
 
+#define MAX(x, y) ((x) < (y) ? (y) : (x))
+#define MIN(x, y) ((x) > (y) ? (y) : (x))
+
+static __thread char perrorbuf[1024];
+
+// NOLINTBEGIN(clang-diagnostic-gnu-zero-variadic-macro-arguments)
+
+#define eprintf(loglvl, fmt, ...)                                              \
+  fprintf(stderr, #loglvl ": %s(%s:%d): " fmt, __FUNCTION__, __FILE__,         \
+          __LINE__, ##__VA_ARGS__)
+
+#define eprintln(loglvl, fmt, ...) eprintf(loglvl, fmt "\n", ##__VA_ARGS__)
+
+#define perrorfl(msg)                                                          \
+  do {                                                                         \
+    if (strerror_r(errno, perrorbuf, sizeof(perrorbuf)) != 0) {                \
+      perror(msg);                                                             \
+      break;                                                                   \
+    }                                                                          \
+    eprintln(error, "%s: %s", (msg), perrorbuf);                               \
+  } while (0)
+
+// NOLINTEND(clang-diagnostic-gnu-zero-variadic-macro-arguments)
+
 /* You won't lose style points for including this long line in your code */
 static const char *user_agent_hdr =
-  "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:10.0.3) Gecko/20120305 "
-  "Firefox/10.0.3\r\n";
+  "Mozilla/5.0 (X11; Linux x86_64; rv:10.0.3) Gecko/20120305 Firefox/10.0.3";
 
-int main() {
-  printf("%s", user_agent_hdr);
+static int startswith(const char *str, const char *prefix) {
+  return strncmp(str, prefix, strlen(prefix)) == 0;
+}
+
+static int startswithcase(const char *str, const char *prefix) {
+  return strncasecmp(str, prefix, strlen(prefix)) == 0;
+}
+
+static char *resolve_port(int argc, char *argv[]) {
+  if (argc == 1)
+    return "80";
+
+  if (argc > 2) {
+    eprintln(error, "superflous command line arguments\n"
+                    "usage: ./proxy [port]");
+    exit(1);
+  }
+
+  return argv[1];
+}
+
+static int uri_parse(char *uri, size_t n, const char **host, const char **port,
+                     const char **loc) {
+  char *tmp;
+
+  if (!startswith(uri, "http:/"))
+    return -1;
+
+  *host = strtok_r(uri + strlen("http:/"), "/", &tmp);
+  if (*host == NULL)
+    return -1;
+
+  *loc = MIN(*host + strlen(*host) + 1, uri + n);
+
+  tmp = strchr(*host, ':');
+  if (tmp == NULL) {
+    *port = "80";
+  } else {
+    *tmp++ = '\0';
+    if (*tmp == '\0')
+      return -1;
+
+    if (strchr(tmp, ':') != NULL)
+      return -1;
+
+    *port = tmp;
+  }
+
+  return 0;
+}
+
+static int parse_reqline(char *req, const char **host, const char **port,
+                         const char **loc) {
+  char *uri, *save;
+  const char *tok;
+
+  tok = strtok_r(req, " ", &save);
+  if (tok == NULL) {
+    eprintln(error, "empty request line");
+    return -1;
+  }
+  if (strcmp(tok, "GET") != 0) {
+    eprintln(error, "unknown method '%s'", tok);
+    return -1;
+  }
+
+  uri = strtok_r(NULL, " ", &save);
+  if (uri == NULL) {
+    eprintln(error, "missing URI field");
+    return -1;
+  }
+
+  tok = strtok_r(NULL, " ", &save);
+  if (tok == NULL
+      || (!startswith(tok, "HTTP/1.1") && !startswith(tok, "HTTP/1.0"))) {
+    eprintln(error, "malformed or unknown version field");
+    return -1;
+  }
+
+  tok = strtok_r(NULL, " ", &save);
+  if (tok != NULL && strcmp(tok, "\r\n") != 0) {
+    eprintln(error, "malformed request line");
+    return -1;
+  }
+
+  return uri_parse(uri, strlen(uri), host, port, loc);
+}
+
+static int retry_connect(int fd, const struct sockaddr *addr, socklen_t len) {
+  int ret;
+  do {
+    ret = connect(fd, addr, len);
+  } while (ret < 0 && errno == EINTR);
+  return ret;
+}
+
+static int connect_openwb(const char *host, const char *port, FILE **conn) {
+  struct addrinfo hint, *result, *ai;
+  int ret, fd;
+
+  memset(&hint, 0, sizeof(hint));
+  hint.ai_flags = AI_V4MAPPED | AI_ADDRCONFIG | AI_NUMERICSERV;
+  hint.ai_socktype = SOCK_STREAM;
+
+  ret = getaddrinfo(host, port, &hint, &result);
+  if (ret != 0) {
+    eprintln(error, "getaddrinfo failed: %s", gai_strerror(ret));
+    return ret;
+  }
+
+  fd = -1;
+  for (ai = result; ai != NULL; ai = result->ai_next) {
+    fd = socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
+    if (fd < 0)
+      continue;
+
+    if (retry_connect(fd, ai->ai_addr, ai->ai_addrlen) == 0)
+      break;
+
+    close(fd);
+  }
+
+  if (ai != NULL) {
+    *conn = fdopen(fd, "wb");
+    if (*conn == NULL)
+      perrorfl("error connecting host");
+  } else {
+    eprintln(error, "cannot connect to host");
+    *conn = NULL;
+  }
+
+  freeaddrinfo(result);
+  return ret;
+}
+
+static const char *http_reason(int code) {
+  switch (code) {
+  case 200:
+    return "OK";
+  case 301:
+    return "Moved Permanently";
+  case 302:
+    return "Moved Temporarily";
+  case 400:
+    return "Bad Request";
+  case 401:
+    return "Unauthorized";
+  case 403:
+    return "Forbidden";
+  case 404:
+    return "Not Found";
+  case 500:
+    return "Internal Server Error";
+  case 501:
+    return "Not Implemented";
+  case 502:
+    return "Bad Gateway";
+  case 503:
+    return "Service Unavailable";
+  default:
+    return "Unknown";
+  }
+}
+
+static const char *DAY_NAMES[] = { "Sun", "Mon", "Tue", "Wed",
+                                   "Thu", "Fri", "Sat" };
+static const char *MONTH_NAMES[] = { "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                                     "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
+#define RFC1123_TIME_BUF 30
+
+static int rfc1123_datetimenow(char *buf) {
+  struct timeval tv;
+  struct tm tm;
+
+  if (gettimeofday(&tv, NULL) != 0 || gmtime_r(&tv.tv_sec, &tm) == NULL)
+    return 0;
+
+  strftime(buf, RFC1123_TIME_BUF, "---, %d --- %Y %H:%M:%S GMT", &tm);
+  memcpy(buf, DAY_NAMES[tm.tm_wday], 3);
+  memcpy(buf + 8, MONTH_NAMES[tm.tm_mon], 3);
+  return 1;
+}
+
+static void http_response_self(FILE *fp, int code) {
+  char buf[RFC1123_TIME_BUF];
+
+  fprintf(fp,
+          "HTTP/1.0 %d %s\r\n"
+          "Content-Length: 0\r\n",
+          code, http_reason(code));
+
+  if (rfc1123_datetimenow(buf))
+    fprintf(fp, "Date: %s\r\n", buf);
+
+  fprintf(fp, "\r\n");
+}
+
+static int forward_request(FILE *server, FILE *client, char **buf,
+                           size_t *buflen, const char *host, const char *loc) {
+  ssize_t n;
+  int host_sent = 0, ret = 0;
+
+  host = strdup(host);
+  if (host == NULL) {
+    perrorfl("cannot allocate memory for host string");
+    return -1;
+  }
+
+  if ((ret = fprintf(client,
+                     "GET /%s HTTP/1.0\r\n"
+                     "User-Agent: %s\r\n"
+                     "Connection: close\r\n"
+                     "Proxy-Connection: close\r\n",
+                     loc, user_agent_hdr))
+      < 0) {
+    goto exit_free;
+  }
+
+  eprintln(info, "GET http://%s/%s HTTP/1.0", host, loc);
+
+  while ((n = getline(buf, buflen, server)) > 0) {
+    if (startswithcase(*buf, "User-Agent: ")
+        || startswithcase(*buf, "Connection: ")
+        || startswithcase(*buf, "Proxy-Connection: "))
+      continue;
+    if (startswithcase(*buf, "Host: "))
+      host_sent = 1;
+    if (strcmp(*buf, "\r\n") == 0)
+      break;
+
+    if ((ret = fwrite_unlocked(*buf, sizeof(**buf), n, client)) == 0) {
+      ret = -1;
+      goto exit_free;
+    }
+  }
+
+  if (!host_sent)
+    if ((ret = fprintf(client, "Host: %s\r\n", host)) < 0)
+      goto exit_free;
+
+  if ((ret = fprintf(client, "\r\n")) < 0)
+    goto exit_free;
+
+  ret = fflush_unlocked(client);
+
+exit_free:
+  free((void *)host); // NOLINT(clang-diagnostic-cast-qual)
+
+  if (ret < 0)
+    perrorfl("error sending request");
+  return ret;
+}
+
+static ssize_t retry_recv(int fd, void *buf, size_t n) {
+  ssize_t ret;
+  do {
+    ret = recv(fd, buf, n, 0);
+  } while (ret < 0 && errno == EINTR);
+  return ret;
+}
+
+static ssize_t retry_send(int fd, const void *buf, size_t n) {
+  ssize_t ret;
+  do {
+    ret = send(fd, buf, n, 0);
+  } while (ret < 0 && errno == EINTR);
+  return ret;
+}
+
+static void forward_response(FILE *client, FILE *server, char *buf,
+                             size_t buflen) {
+  ssize_t n;
+  int srcfd, dstfd;
+
+  srcfd = fileno_unlocked(client);
+  dstfd = fileno_unlocked(server);
+
+  while ((n = retry_recv(srcfd, buf, buflen)) != 0) {
+    if (n < 0) {
+      perrorfl("error receiving message");
+      return;
+    }
+
+    n = retry_send(dstfd, buf, n);
+    if (n < 0) {
+      perrorfl("error sending message");
+      return;
+    }
+  }
+}
+
+static void handle_connection(FILE *server) {
+  char *buf = malloc(MAXLINE);
+  size_t buflen = MAXLINE;
+  ssize_t n;
+
+  const char *host, *port, *loc;
+  FILE *client;
+
+  n = getline(&buf, &buflen, server);
+  if (n <= 0) {
+    perrorfl("error reading connection");
+    http_response_self(server, 400);
+    goto no_req;
+  }
+
+  if (parse_reqline(buf, &host, &port, &loc) != 0) {
+    eprintln(error, "errorneous request line");
+    http_response_self(server, 400);
+    goto no_req;
+  }
+
+  if (connect_openwb(host, port, &client) != 0) {
+    http_response_self(server, 400);
+    goto no_req;
+  }
+  if (client == NULL) {
+    http_response_self(server, 502);
+    goto no_req;
+  }
+
+  if (forward_request(server, client, &buf, &buflen, host, loc) < 0) {
+    http_response_self(server, 502);
+    goto req_fail;
+  }
+
+  forward_response(client, server, buf, buflen);
+
+req_fail:
+  fclose(client);
+
+no_req:
+  free(buf);
+  fclose(server);
+}
+
+static void server_loop(const int listenfd) {
+  struct sockaddr_storage clientaddr;
+  socklen_t clientlen;
+  int connfd;
+  FILE *conn;
+
+  while (1) {
+    connfd = accept(listenfd, (struct sockaddr *)&clientaddr, &clientlen);
+    if (connfd < 0) {
+      if (errno == EINTR)
+        break;
+
+      perrorfl("cannot open connection");
+      continue;
+    }
+
+    conn = fdopen(connfd, "w+b");
+    if (conn == NULL) {
+      perrorfl("cannot open connection");
+      continue;
+    }
+
+    handle_connection(conn);
+  }
+}
+
+int main(int argc, char *argv[]) {
+  char *port;
+  int fd;
+
+  port = resolve_port(argc, argv);
+  fd = Open_listenfd(port);
+
+  server_loop(fd);
+
+  Close(fd);
   return 0;
 }
