@@ -67,6 +67,55 @@ static char *resolve_port(int argc, char *argv[]) {
   return argv[1];
 }
 
+static int sockopt_bind_listen(int fd, const struct sockaddr *addr,
+                               socklen_t addrlen) {
+  int optval = 1;
+
+  if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, (const void *)&optval,
+                 sizeof(optval))
+      < 0) {
+    return -1;
+  }
+
+  if (bind(fd, addr, addrlen) < 0)
+    return -1;
+
+  return listen(fd, LISTENQ);
+}
+
+static int wrap_socket_open(const char *host, const char *port, int flags,
+                            int (*trial)(int, const struct sockaddr *,
+                                         socklen_t)) {
+  struct addrinfo hint, *result, *ai;
+  int ret, fd;
+
+  memset(&hint, 0, sizeof(hint));
+  hint.ai_flags = AI_V4MAPPED | AI_ADDRCONFIG | AI_NUMERICSERV | flags;
+  hint.ai_socktype = SOCK_STREAM;
+
+  ret = getaddrinfo(host, port, &hint, &result);
+  if (ret != 0) {
+    eprintln(error, "getaddrinfo failed: %s", gai_strerror(ret));
+    return -2;
+  }
+
+  fd = -1;
+  for (ai = result; ai != NULL; ai = result->ai_next) {
+    fd = socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
+    if (fd < 0)
+      continue;
+
+    if (trial(fd, ai->ai_addr, ai->ai_addrlen) == 0)
+      break;
+
+    close(fd);
+  }
+
+  freeaddrinfo(result);
+
+  return ai == NULL ? -1 : fd;
+}
+
 static int uri_parse(char *uri, size_t n, const char **host, const char **port,
                      const char **loc) {
   char *tmp;
@@ -134,51 +183,21 @@ static int parse_reqline(char *req, const char **host, const char **port,
   return uri_parse(uri, strlen(uri), host, port, loc);
 }
 
-static int retry_connect(int fd, const struct sockaddr *addr, socklen_t len) {
-  int ret;
-  do {
-    ret = connect(fd, addr, len);
-  } while (ret < 0 && errno == EINTR);
-  return ret;
-}
-
 static int connect_openwb(const char *host, const char *port, FILE **conn) {
-  struct addrinfo hint, *result, *ai;
-  int ret, fd;
+  int fd;
 
-  memset(&hint, 0, sizeof(hint));
-  hint.ai_flags = AI_V4MAPPED | AI_ADDRCONFIG | AI_NUMERICSERV;
-  hint.ai_socktype = SOCK_STREAM;
+  fd = wrap_socket_open(host, port, 0, connect);
 
-  ret = getaddrinfo(host, port, &hint, &result);
-  if (ret != 0) {
-    eprintln(error, "getaddrinfo failed: %s", gai_strerror(ret));
-    return ret;
-  }
-
-  fd = -1;
-  for (ai = result; ai != NULL; ai = result->ai_next) {
-    fd = socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
-    if (fd < 0)
-      continue;
-
-    if (retry_connect(fd, ai->ai_addr, ai->ai_addrlen) == 0)
-      break;
-
-    close(fd);
-  }
-
-  if (ai != NULL) {
-    *conn = fdopen(fd, "wb");
-    if (*conn == NULL)
-      perrorfl("error connecting host");
-  } else {
+  if (fd < 0) {
     eprintln(error, "cannot connect to host");
     *conn = NULL;
+    return fd + 1;
   }
 
-  freeaddrinfo(result);
-  return ret;
+  *conn = fdopen(fd, "wb");
+  if (*conn == NULL)
+    perrorfl("error connecting host");
+  return 0;
 }
 
 static const char *http_reason(int code) {
@@ -413,7 +432,9 @@ int main(int argc, char *argv[]) {
   int fd;
 
   port = resolve_port(argc, argv);
-  fd = Open_listenfd(port);
+  fd = wrap_socket_open(NULL, port, AI_PASSIVE, sockopt_bind_listen);
+  if (fd < 0)
+    unix_error("cannot listen to port");
 
   server_loop(fd);
 
