@@ -1,6 +1,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <netdb.h>
+#include <pthread.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -13,6 +14,7 @@
 #include <sys/types.h>
 
 #include "csapp.h"
+#include "sbuf.h"
 
 /* Recommended max cache and object sizes */
 #define MAX_CACHE_SIZE  1049000
@@ -385,7 +387,19 @@ no_req:
   fclose(server);
 }
 
-static void server_loop(const int listenfd) {
+static void *worker_loop(void *arg) {
+  sbuf_t sbuf = arg;
+  FILE *conn;
+
+  while (1) {
+    sbuf_deq(sbuf, &conn);
+    handle_connection(conn);
+  }
+
+  return NULL;
+}
+
+static void server_loop(const int listenfd, sbuf_t sbuf) {
   struct sockaddr_storage clientaddr;
   socklen_t clientlen;
   int connfd;
@@ -407,7 +421,21 @@ static void server_loop(const int listenfd) {
       continue;
     }
 
-    handle_connection(conn);
+    sbuf_enq(sbuf, &conn);
+  }
+}
+
+static void spawn(sbuf_t sbuf, int cnt) {
+  pthread_t worker;
+  pthread_attr_t worker_attr;
+  int ret, i;
+
+  pthread_attr_init(&worker_attr);
+  pthread_attr_setdetachstate(&worker_attr, PTHREAD_CREATE_DETACHED);
+  for (i = 0; i < cnt; ++i) {
+    ret = pthread_create(&worker, &worker_attr, worker_loop, sbuf);
+    if (ret != 0)
+      posix_error(ret, "cannot create worke threads");
   }
 }
 
@@ -415,13 +443,19 @@ int main(int argc, char *argv[]) {
   char *port;
   int fd;
 
+  sbuf_t sbuf;
+
   port = resolve_port(argc, argv);
   fd = wrap_socket_open(NULL, port, AI_PASSIVE, sockopt_bind_listen);
   if (fd < 0)
     unix_error("cannot listen to port");
 
-  server_loop(fd);
+  sbuf = sbuf_create(LISTENQ, sizeof(FILE *));
 
+  spawn(sbuf, 8);
+  server_loop(fd, sbuf);
+
+  sbuf_destroy(sbuf);
   Close(fd);
   return 0;
 }
