@@ -8,16 +8,17 @@ CC = gcc
 CFLAGS := -Wall -O2 $(CFLAGS)
 LDFLAGS = -lpthread
 
+HDRS = $(wildcard *.h)
+SRCS = $(wildcard *.c)
+OBJS = $(SRCS:.c=.o)
+
 all: proxy
 
-csapp.o: csapp.c csapp.h
-	$(CC) $(CFLAGS) -c csapp.c
+%.o: %.c $(HDRS)
+	$(CC) $(CFLAGS) -c $<
 
-proxy.o: proxy.c csapp.h
-	$(CC) $(CFLAGS) -c proxy.c
-
-proxy: proxy.o csapp.o
-	$(CC) $(CFLAGS) proxy.o csapp.o -o proxy $(LDFLAGS)
+proxy: $(OBJS)
+	$(CC) $(CFLAGS) -o proxy $^ $(LDFLAGS)
 
 # Creates a tarball in ../proxylab-handin.tar that you can then
 # hand in. DO NOT MODIFY THIS!
