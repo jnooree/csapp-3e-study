@@ -2,6 +2,7 @@
 #include <fcntl.h>
 #include <netdb.h>
 #include <pthread.h>
+#include <signal.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -443,9 +444,15 @@ int main(int argc, char *argv[]) {
   char *port;
   int fd;
 
+  struct sigaction sa;
   sbuf_t sbuf;
 
   port = resolve_port(argc, argv);
+
+  memset(&sa, 0, sizeof(sa));
+  sa.sa_handler = SIG_IGN;
+  sigaction(SIGPIPE, &sa, NULL);
+
   fd = wrap_socket_open(NULL, port, AI_PASSIVE, sockopt_bind_listen);
   if (fd < 0)
     unix_error("cannot listen to port");
