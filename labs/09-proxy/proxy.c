@@ -426,7 +426,7 @@ static void server_loop(const int listenfd, sbuf_t sbuf) {
   }
 }
 
-static void spawn(sbuf_t sbuf, int cnt) {
+static void spawn(int cnt, sbuf_t sbuf) {
   pthread_t worker;
   pthread_attr_t worker_attr;
   int ret, i;
@@ -459,7 +459,7 @@ int main(int argc, char *argv[]) {
 
   sbuf = sbuf_create(LISTENQ, sizeof(FILE *));
 
-  spawn(sbuf, 8);
+  spawn(8, sbuf);
   server_loop(fd, sbuf);
 
   sbuf_destroy(sbuf);
