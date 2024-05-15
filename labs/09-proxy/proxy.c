@@ -318,22 +318,6 @@ exit_free:
   return ret;
 }
 
-static ssize_t retry_recv(int fd, void *buf, size_t n) {
-  ssize_t ret;
-  do {
-    ret = recv(fd, buf, n, 0);
-  } while (ret < 0 && errno == EINTR);
-  return ret;
-}
-
-static ssize_t retry_send(int fd, const void *buf, size_t n) {
-  ssize_t ret;
-  do {
-    ret = send(fd, buf, n, 0);
-  } while (ret < 0 && errno == EINTR);
-  return ret;
-}
-
 static void forward_response(FILE *client, FILE *server, char *buf,
                              size_t buflen) {
   ssize_t n;
@@ -342,13 +326,13 @@ static void forward_response(FILE *client, FILE *server, char *buf,
   srcfd = fileno_unlocked(client);
   dstfd = fileno_unlocked(server);
 
-  while ((n = retry_recv(srcfd, buf, buflen)) != 0) {
+  while ((n = recv(srcfd, buf, buflen, 0)) != 0) {
     if (n < 0) {
       perrorfl("error receiving message");
       return;
     }
 
-    n = retry_send(dstfd, buf, n);
+    n = send(dstfd, buf, n, 0);
     if (n < 0) {
       perrorfl("error sending message");
       return;
