@@ -14,6 +14,7 @@
 #include <sys/time.h>
 #include <sys/types.h>
 
+#include "cache.h"
 #include "csapp.h"
 #include "sbuf.h"
 
@@ -270,12 +271,6 @@ static int forward_request(FILE *server, FILE *client, char **buf,
   ssize_t n;
   int host_sent = 0, ret = 0;
 
-  host = strdup(host);
-  if (host == NULL) {
-    perrorfl("cannot allocate memory for host string");
-    return -1;
-  }
-
   if ((ret = fprintf(client,
                      "GET /%s HTTP/1.0\r\n"
                      "User-Agent: %s\r\n"
@@ -283,7 +278,7 @@ static int forward_request(FILE *server, FILE *client, char **buf,
                      "Proxy-Connection: close\r\n",
                      loc, user_agent_hdr))
       < 0) {
-    goto exit_free;
+    goto exit_log;
   }
 
   eprintln(info, "GET http://%s/%s HTTP/1.0", host, loc);
@@ -300,31 +295,33 @@ static int forward_request(FILE *server, FILE *client, char **buf,
 
     if ((ret = fwrite_unlocked(*buf, sizeof(**buf), n, client)) == 0) {
       ret = -1;
-      goto exit_free;
+      goto exit_log;
     }
   }
 
   if (!host_sent)
     if ((ret = fprintf(client, "Host: %s\r\n", host)) < 0)
-      goto exit_free;
+      goto exit_log;
 
   if ((ret = fprintf(client, "\r\n")) < 0)
-    goto exit_free;
+    goto exit_log;
 
   ret = fflush_unlocked(client);
 
-exit_free:
-  free((void *)host); // NOLINT(clang-diagnostic-cast-qual)
-
+exit_log:
   if (ret < 0)
     perrorfl("error sending request");
+
   return ret;
 }
 
 static void forward_response(FILE *client, FILE *server, char *buf,
-                             size_t buflen) {
+                             size_t buflen, const char *host, const char *loc) {
   ssize_t n;
   int srcfd, dstfd;
+
+  char *data = malloc(MAX_OBJECT_SIZE);
+  size_t datasz = 0;
 
   srcfd = fileno_unlocked(client);
   dstfd = fileno_unlocked(server);
@@ -332,15 +329,25 @@ static void forward_response(FILE *client, FILE *server, char *buf,
   while ((n = recv(srcfd, buf, buflen, 0)) != 0) {
     if (n < 0) {
       perrorfl("error receiving message");
-      return;
+      goto exit_free;
     }
 
-    n = send(dstfd, buf, n, 0);
-    if (n < 0) {
+    if (datasz <= MAX_OBJECT_SIZE) {
+      memcpy(data + datasz, buf, MIN(MAX_OBJECT_SIZE - datasz, n));
+      datasz += n;
+    }
+
+    if (send(dstfd, buf, n, 0) != n) {
       perrorfl("error sending message");
-      return;
+      goto exit_free;
     }
   }
+
+  if (datasz <= MAX_OBJECT_SIZE)
+    cache_put(host, loc, data, datasz);
+
+exit_free:
+  free(data);
 }
 
 static void handle_connection(FILE *server) {
@@ -364,6 +371,13 @@ static void handle_connection(FILE *server) {
     goto no_req;
   }
 
+  if (cache_get(host, loc, &buf, &buflen)) {
+    n = send(fileno_unlocked(server), buf, buflen, 0);
+    if (n < 0)
+      perrorfl("error sending message");
+    goto no_req;
+  }
+
   if (connect_openwb(host, port, &client) != 0) {
     http_response_self(server, 400);
     goto no_req;
@@ -373,14 +387,19 @@ static void handle_connection(FILE *server) {
     goto no_req;
   }
 
+  host = strdup(host);
+  loc = strdup(loc);
+
   if (forward_request(server, client, &buf, &buflen, host, loc) < 0) {
     http_response_self(server, 502);
     goto req_fail;
   }
 
-  forward_response(client, server, buf, buflen);
+  forward_response(client, server, buf, buflen, host, loc);
 
 req_fail:
+  free((void *)loc);  // NOLINT(clang-diagnostic-cast-qual)
+  free((void *)host); // NOLINT(clang-diagnostic-cast-qual)
   fclose(client);
 
 no_req:
@@ -457,6 +476,7 @@ int main(int argc, char *argv[]) {
   if (fd < 0)
     unix_error("cannot listen to port");
 
+  cache_init(MAX_CACHE_SIZE);
   sbuf = sbuf_create(LISTENQ, sizeof(FILE *));
 
   spawn(8, sbuf);
